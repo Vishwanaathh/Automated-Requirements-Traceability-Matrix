@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Requirement Traceability Matrix</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 30px;
+}
+
+h1, h2 {
+    text-align: center;
+}
+
+.section {
+    border: 1px solid #ccc;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+input, select, button {
+    padding: 6px;
+    margin: 5px;
+}
+
+button {
+    cursor: pointer;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    border: 1px solid #333;
+    padding: 8px;
+    font-size: 14px;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+
+.status-Pass { color: green; font-weight: bold; }
+.status-Fail { color: red; font-weight: bold; }
+.status-Pending { color: orange; font-weight: bold; }
+
+ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+#log {
+    background: #111;
+    color: #0f0;
+    padding: 10px;
+    height: 150px;
+    overflow-y: auto;
+    font-size: 13px;
+}
+
+@media print {
+    button, input, select, .section {
+        display: none;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<h1>Requirement Traceability Matrix (RTM)</h1>
+
+<div class="section">
+<h2>Add Requirement</h2>
+<input id="r_title" placeholder="Title">
+<input id="r_desc" placeholder="Description">
+<input id="r_priority" placeholder="Priority">
+<button onclick="addRequirement()">Add Requirement</button>
+</div>
+
+<div class="section">
+<h2>Add Test Case</h2>
+<input id="t_title" placeholder="Title">
+<input id="t_desc" placeholder="Description">
+<input id="t_expected" placeholder="Expected Result">
+<select id="t_status">
+    <option>Pass</option>
+    <option>Fail</option>
+    <option>Pending</option>
+</select>
+<button onclick="addTestCase()">Add Test Case</button>
+</div>
+
+<div class="section">
+<h2>Link Requirement ↔ Test Case</h2>
+<input id="req_id" type="number" placeholder="Requirement ID">
+<input id="tc_id" type="number" placeholder="Test Case ID">
+<button onclick="linkRTM()">Link</button>
+</div>
+
+<div class="section">
+<h2>GET Controls</h2>
+<button onclick="getRequirements()">Get Requirements</button>
+<button onclick="getTestCases()">Get Test Cases</button>
+<button onclick="getRTM()">Get RTM</button>
+<button onclick="clearLog()">Clear Log</button>
+</div>
+
+<div class="section">
+<h2>Existing Requirements</h2>
+<ul id="requirementList"></ul>
+</div>
+
+<div class="section">
+<h2>Existing Test Cases</h2>
+<ul id="testcaseList"></ul>
+</div>
+
+<button onclick="window.print()">🖨 Print RTM</button>
+
+<table id="rtmTable">
+<thead>
+<tr>
+    <th>Req ID</th>
+    <th>Requirement</th>
+    <th>TC ID</th>
+    <th>Test Case</th>
+    <th>Status</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+
+
+<script>
+const API = "http://127.0.0.1:8000";
+const logBox = document.getElementById("log");
+
+function log(msg) {
+    logBox.textContent += msg + "\n";
+}
+
+function clearLog() {
+    logBox.textContent = "";
+}
+
+/* ---------- GET REQUESTS ---------- */
+
+function getRequirements() {
+    fetch(API + "/requirements")
+        .then(res => res.json())
+        .then(data => {
+            log("GET /requirements OK");
+            const ul = document.getElementById("requirementList");
+            ul.innerHTML = "";
+            data.forEach(req => {
+                ul.innerHTML += `<li>ID: ${req.id} | ${req.title} | ${req.priority}</li>`;
+            });
+        })
+        .catch(err => log("GET /requirements ERROR: " + err));
+}
+
+function getTestCases() {
+    fetch(API + "/testcases")
+        .then(res => res.json())
+        .then(data => {
+            log("GET /testcases OK");
+            const ul = document.getElementById("testcaseList");
+            ul.innerHTML = "";
+            data.forEach(tc => {
+                ul.innerHTML += `<li>ID: ${tc.id} | ${tc.title} | ${tc.status}</li>`;
+            });
+        })
+        .catch(err => log("GET /testcases ERROR: " + err));
+}
+
+function getRTM() {
+    fetch(API + "/rtm")
+        .then(res => res.json())
+        .then(data => {
+            log("GET /rtm OK");
+            const tbody = document.querySelector("#rtmTable tbody");
+            tbody.innerHTML = "";
+            data.forEach(row => {
+                tbody.innerHTML += `
+                <tr>
+                    <td>${row.requirement_id}</td>
+                    <td>${row.requirement_title}</td>
+                    <td>${row.testcase_id}</td>
+                    <td>${row.testcase_title}</td>
+                    <td class="status-${row.status}">${row.status}</td>
+                </tr>`;
+            });
+        })
+        .catch(err => log("GET /rtm ERROR: " + err));
+}
+
+/* ---------- POST REQUESTS ---------- */
+
+function addRequirement() {
+    fetch(API + "/requirement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            title: r_title.value,
+            description: r_desc.value,
+            priority: r_priority.value
+        })
+    })
+    .then(res => res.json())
+    .then(() => {
+        log("POST /requirement OK");
+        getRequirements();
+    })
+    .catch(err => log("POST /requirement ERROR: " + err));
+}
+
+function addTestCase() {
+    fetch(API + "/testcase", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            title: t_title.value,
+            description: t_desc.value,
+            expected_result: t_expected.value,
+            status: t_status.value
+        })
+    })
+    .then(res => res.json())
+    .then(() => {
+        log("POST /testcase OK");
+        getTestCases();
+    })
+    .catch(err => log("POST /testcase ERROR: " + err));
+}
+
+function linkRTM() {
+    fetch(API + "/rtmmap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            reqid: Number(req_id.value),
+            testid: Number(tc_id.value)
+        })
+    })
+    .then(res => res.json())
+    .then(() => {
+        log("POST /rtmmap OK");
+        getRTM();
+    })
+    .catch(err => log("POST /rtmmap ERROR: " + err));
+}
+</script>
+
+</body>
+</html>
