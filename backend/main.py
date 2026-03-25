@@ -6,17 +6,11 @@ from datetime import datetime, timedelta
 from jose import jwt, JWTError
 import google.generativeai as genai
 import json
-
-# ---------------- CONFIG ----------------
 SECRET_KEY = "77777"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
-
-# 👉 ADD YOUR GEMINI API KEY HERE
 genai.configure(api_key="YOUR_GEMINI_API_KEY")
 model = genai.GenerativeModel("gemini-pro")
-
-# ---------------- DB ----------------
 def get_db():
     return mysql.connector.connect(
         host="localhost",
@@ -26,7 +20,6 @@ def get_db():
         database="rtm"
     )
 
-# ---------------- MODELS ----------------
 class LoginData(BaseModel):
     username: str
     password: str
@@ -51,7 +44,7 @@ class RegisterData(BaseModel):
     password: str
     role: str
 
-# ---------------- APP ----------------
+
 app = FastAPI(title="RTM Backend")
 
 app.add_middleware(
@@ -62,7 +55,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- AUTH ----------------
 def create_access_token(data: dict):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     data.update({"exp": expire})
@@ -77,7 +69,7 @@ def verify_token(authorization: str = Header(...)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-# ---------------- AUTH ROUTES ----------------
+
 @app.post("/register")
 def register(data: RegisterData):
     db = get_db()
@@ -117,7 +109,7 @@ def login(data: LoginData):
 def welcome():
     return {"message": "Welcome to RTM backend"}
 
-# ---------------- CORE ROUTES ----------------
+
 @app.post("/requirement")
 def add_requirement(data: Requirement, user=Depends(verify_token)):
     db = get_db()
@@ -157,7 +149,7 @@ def link_rtm(data: RTMmap, user=Depends(verify_token)):
     db.close()
     return {"message": "Successfully linked"}
 
-# ---------------- FETCH DATA ----------------
+
 def fetch_data():
     db = get_db()
     cursor = db.cursor(dictionary=True)
@@ -173,7 +165,7 @@ def fetch_data():
 
     return requirements, testcases
 
-# ---------------- GEMINI FUNCTION ----------------
+
 def generate_rtm_mapping(requirements, testcases):
     req_text = "\n".join([
         f"{r['id']}: {r['title']} - {r['description']}"
@@ -205,7 +197,6 @@ No explanation. No extra text.
     response = model.generate_content(prompt)
     return response.text
 
-# ---------------- AUTO RTM ----------------
 @app.post("/auto-rtm")
 def auto_rtm(user=Depends(verify_token)):
     requirements, testcases = fetch_data()
@@ -234,7 +225,7 @@ def auto_rtm(user=Depends(verify_token)):
 
     return {"message": "AI RTM mapping completed"}
 
-# ---------------- VIEW ROUTES ----------------
+
 @app.get("/requirements")
 def get_requirements(user=Depends(verify_token)):
     db = get_db()
