@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,50 +7,95 @@
 
 <style>
 body {
-    font-family: Arial, sans-serif;
-    margin: 30px;
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    background: linear-gradient(135deg, #1e1e2f, #2c2c54);
+    color: #fff;
+}
+
+h1 {
+    text-align: center;
+    padding: 20px;
+    margin: 0;
+    background: #111;
+    letter-spacing: 1px;
+}
+
+.section {
+    background: #2a2a40;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px;
+    box-shadow: 0 0 15px rgba(0,0,0,0.5);
 }
 
 .hidden {
     display: none;
 }
 
-.section {
-    border: 1px solid #ccc;
-    padding: 15px;
-    margin-bottom: 20px;
+input, select {
+    padding: 8px;
+    margin: 6px;
+    border-radius: 6px;
+    border: none;
+    outline: none;
 }
 
-input, select, button {
-    padding: 6px;
-    margin: 5px;
+button {
+    padding: 8px 14px;
+    margin: 6px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    background: #4CAF50;
+    color: white;
+    transition: 0.3s;
+}
+
+button:hover {
+    background: #45a049;
+    transform: scale(1.05);
+}
+
+button.logout {
+    background: #e74c3c;
+}
+
+button.logout:hover {
+    background: #c0392b;
 }
 
 table {
-    width: 100%;
+    width: 95%;
+    margin: 20px auto;
     border-collapse: collapse;
-    margin-top: 15px;
+    background: #1c1c2e;
+    border-radius: 10px;
+    overflow: hidden;
 }
 
 th, td {
-    border: 1px solid #333;
-    padding: 8px;
+    padding: 10px;
+    border-bottom: 1px solid #444;
+    text-align: center;
 }
 
 th {
-    background: #eee;
+    background: #111;
 }
 
-.status-Pass { color: green; font-weight: bold; }
-.status-Fail { color: red; font-weight: bold; }
-.status-Pending { color: orange; font-weight: bold; }
+.status-Pass { color: #00ff9c; font-weight: bold; }
+.status-Fail { color: #ff4c4c; font-weight: bold; }
+.status-Pending { color: #ffc107; font-weight: bold; }
 
 #log {
-    background: #111;
+    background: #000;
     color: #0f0;
     padding: 10px;
     height: 120px;
     overflow-y: auto;
+    margin: 20px;
+    border-radius: 10px;
     font-size: 13px;
 }
 </style>
@@ -57,7 +103,7 @@ th {
 
 <body>
 
-<h1>Requirement Traceability Matrix</h1>
+<h1>Requirement Traceability Matrix 🚀</h1>
 
 <div id="registerPage" class="section">
 <h2>Register</h2>
@@ -80,7 +126,7 @@ th {
 
 <div id="mainPage" class="hidden">
 
-<button onclick="logout()">Logout</button>
+<button class="logout" onclick="logout()">Logout</button>
 
 <div class="section">
 <h2>Add Requirement</h2>
@@ -88,8 +134,8 @@ th {
 <input id="r_desc" placeholder="Description">
 <input id="r_priority" placeholder="Priority">
 <br>
-<button onclick="addRequirement()">Add Requirement</button>
-<button onclick="getRequirements()">View Requirements</button>
+<button onclick="addRequirement()">Add</button>
+<button onclick="getRequirements()">View</button>
 </div>
 
 <table id="reqTable" class="hidden">
@@ -115,8 +161,8 @@ th {
 <option>Pending</option>
 </select>
 <br>
-<button onclick="addTestCase()">Add Test Case</button>
-<button onclick="getTestCases()">View Test Cases</button>
+<button onclick="addTestCase()">Add</button>
+<button onclick="getTestCases()">View</button>
 </div>
 
 <table id="tcTable" class="hidden">
@@ -132,11 +178,13 @@ th {
 </table>
 
 <div class="section">
-<h2>Link RTM</h2>
+<h2>RTM Mapping</h2>
 <input id="req_id" type="number" placeholder="Requirement ID">
 <input id="tc_id" type="number" placeholder="Test Case ID">
-<button onclick="linkRTM()">Link</button>
+<br>
+<button onclick="linkRTM()">Manual Link</button>
 <button onclick="getRTM()">View RTM</button>
+<button onclick="autoRTM()">🤖 Auto Map (AI)</button>
 </div>
 
 <table>
@@ -158,6 +206,7 @@ th {
 
 <script>
 const API = "http://127.0.0.1:8000"
+const logBox = document.getElementById("log")
 
 function showLogin() {
     registerPage.classList.add("hidden")
@@ -201,7 +250,7 @@ function register() {
             role: reg_role.value
         })
     }).then(() => {
-        alert("Registered successfully")
+        alert("Registered")
         showLogin()
     })
 }
@@ -215,11 +264,15 @@ function login() {
             password: login_password.value
         })
     })
-    .then(res => res.json())
+    .then(res => {
+        if (!res.ok) throw new Error("Login failed")
+        return res.json()
+    })
     .then(data => {
         localStorage.setItem("token", data.access_token)
         showMain()
     })
+    .catch(err => alert(err.message))
 }
 
 function addRequirement() {
@@ -291,7 +344,23 @@ function linkRTM() {
             reqid: Number(req_id.value),
             testid: Number(tc_id.value)
         })
-    }).then(() => log("RTM linked"))
+    }).then(() => log("Manual link done"))
+}
+
+function autoRTM() {
+    fetch(API + "/auto-rtm", {
+        method: "POST",
+        headers: authHeaders()
+    })
+    .then(res => res.json())
+    .then(() => {
+        log("AI mapping completed 🤖")
+        getRTM()
+    })
+    .catch(err => {
+        log("AI mapping failed")
+        console.error(err)
+    })
 }
 
 function getRTM() {
@@ -319,3 +388,4 @@ if (localStorage.getItem("token")) {
 
 </body>
 </html>
+```
