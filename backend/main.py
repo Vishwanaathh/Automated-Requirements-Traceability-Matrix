@@ -4,11 +4,19 @@ import mysql.connector
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
+import google.generativeai as genai
+import json
 
+# ---------------- CONFIG ----------------
 SECRET_KEY = "77777"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
+# 👉 ADD YOUR GEMINI API KEY HERE
+genai.configure(api_key="YOUR_GEMINI_API_KEY")
+model = genai.GenerativeModel("gemini-pro")
+
+# ---------------- DB ----------------
 def get_db():
     return mysql.connector.connect(
         host="localhost",
@@ -18,6 +26,7 @@ def get_db():
         database="rtm"
     )
 
+# ---------------- MODELS ----------------
 class LoginData(BaseModel):
     username: str
     password: str
@@ -36,12 +45,13 @@ class TestCase(BaseModel):
 class RTMmap(BaseModel):
     reqid: int
     testid: int
-class RegisterData(BaseModel):
-    
-    username:str
-    password:str
-    role:str
 
+class RegisterData(BaseModel):
+    username: str
+    password: str
+    role: str
+
+# ---------------- APP ----------------
 app = FastAPI(title="RTM Backend")
 
 app.add_middleware(
@@ -52,6 +62,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------- AUTH ----------------
 def create_access_token(data: dict):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     data.update({"exp": expire})
@@ -66,13 +77,19 @@ def verify_token(authorization: str = Header(...)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+# ---------------- AUTH ROUTES ----------------
 @app.post("/register")
-def register(data:RegisterData):
-    db=get_db()
-    cursor=db.cursor(dictionary=True)
-    cursor.execute("INSERT INTO users VALUES (%s,%s,%s)",(data.username,data.password,data.role))
+def register(data: RegisterData):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute(
+        "INSERT INTO users VALUES (%s,%s,%s)",
+        (data.username, data.password, data.role)
+    )
     db.commit()
-    return {"message":"User Registered"}
+    cursor.close()
+    db.close()
+    return {"message": "User Registered"}
 
 @app.post("/login")
 def login(data: LoginData):
@@ -85,19 +102,22 @@ def login(data: LoginData):
     user = cursor.fetchone()
     cursor.close()
     db.close()
+
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
     token = create_access_token({
-        
         "username": user["username"],
         "role": user["role"]
     })
+
     return {"access_token": token}
 
 @app.get("/")
 def welcome():
     return {"message": "Welcome to RTM backend"}
 
+# ---------------- CORE ROUTES ----------------
 @app.post("/requirement")
 def add_requirement(data: Requirement, user=Depends(verify_token)):
     db = get_db()
@@ -137,6 +157,84 @@ def link_rtm(data: RTMmap, user=Depends(verify_token)):
     db.close()
     return {"message": "Successfully linked"}
 
+# ---------------- FETCH DATA ----------------
+def fetch_data():
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
+    cursor.execute("SELECT * FROM requirements")
+    requirements = cursor.fetchall()
+
+    cursor.execute("SELECT * FROM test_cases")
+    testcases = cursor.fetchall()
+
+    cursor.close()
+    db.close()
+
+    return requirements, testcases
+
+# ---------------- GEMINI FUNCTION ----------------
+def generate_rtm_mapping(requirements, testcases):
+    req_text = "\n".join([
+        f"{r['id']}: {r['title']} - {r['description']}"
+        for r in requirements
+    ])
+
+    tc_text = "\n".join([
+        f"{t['id']}: {t['title']} - {t['description']}"
+        for t in testcases
+    ])
+
+    prompt = f"""
+Match each requirement with relevant test cases.
+
+Requirements:
+{req_text}
+
+Test Cases:
+{tc_text}
+
+Return ONLY valid JSON in this format:
+[
+  {{"reqid": 1, "testids": [1,2]}},
+  {{"reqid": 2, "testids": [3]}}
+]
+No explanation. No extra text.
+"""
+
+    response = model.generate_content(prompt)
+    return response.text
+
+# ---------------- AUTO RTM ----------------
+@app.post("/auto-rtm")
+def auto_rtm(user=Depends(verify_token)):
+    requirements, testcases = fetch_data()
+
+    ai_output = generate_rtm_mapping(requirements, testcases)
+
+    try:
+        mapping = json.loads(ai_output)
+    except:
+        raise HTTPException(status_code=500, detail=f"Invalid AI response: {ai_output}")
+
+    db = get_db()
+    cursor = db.cursor()
+
+    for item in mapping:
+        reqid = item["reqid"]
+        for tid in item["testids"]:
+            cursor.execute(
+                "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
+                (reqid, tid)
+            )
+
+    db.commit()
+    cursor.close()
+    db.close()
+
+    return {"message": "AI RTM mapping completed"}
+
+# ---------------- VIEW ROUTES ----------------
 @app.get("/requirements")
 def get_requirements(user=Depends(verify_token)):
     db = get_db()
@@ -145,7 +243,11 @@ def get_requirements(user=Depends(verify_token)):
     rows = cursor.fetchall()
     cursor.close()
     db.close()
-    return [{"id": r[0], "title": r[1], "description": r[2], "priority": r[3]} for r in rows]
+
+    return [
+        {"id": r[0], "title": r[1], "description": r[2], "priority": r[3]}
+        for r in rows
+    ]
 
 @app.get("/testcases")
 def get_testcases(user=Depends(verify_token)):
@@ -155,7 +257,11 @@ def get_testcases(user=Depends(verify_token)):
     rows = cursor.fetchall()
     cursor.close()
     db.close()
-    return [{"id": r[0], "title": r[1], "description": r[2], "expected_result": r[3], "status": r[4]} for r in rows]
+
+    return [
+        {"id": r[0], "title": r[1], "description": r[2], "expected_result": r[3], "status": r[4]}
+        for r in rows
+    ]
 
 @app.get("/rtm")
 def full_rtm(user=Depends(verify_token)):
@@ -171,6 +277,7 @@ def full_rtm(user=Depends(verify_token)):
     rows = cursor.fetchall()
     cursor.close()
     db.close()
+
     return [{
         "requirement_id": r[0],
         "requirement_title": r[1],
