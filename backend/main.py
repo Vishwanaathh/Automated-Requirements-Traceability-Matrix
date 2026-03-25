@@ -4,13 +4,18 @@ import mysql.connector
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
-import google.generativeai as genai
+from google import genai
 import json
+
+# ---------------- CONFIG ----------------
 SECRET_KEY = "77777"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
-genai.configure(api_key="YOUR_GEMINI_API_KEY")
-model = genai.GenerativeModel("gemini-pro")
+
+# 👉 PUT YOUR API KEY HERE
+client = genai.Client(api_key="YOUR_GEMINI_API_KEY")
+
+# ---------------- DB ----------------
 def get_db():
     return mysql.connector.connect(
         host="localhost",
@@ -20,6 +25,7 @@ def get_db():
         database="rtm"
     )
 
+# ---------------- MODELS ----------------
 class LoginData(BaseModel):
     username: str
     password: str
@@ -44,7 +50,7 @@ class RegisterData(BaseModel):
     password: str
     role: str
 
-
+# ---------------- APP ----------------
 app = FastAPI(title="RTM Backend")
 
 app.add_middleware(
@@ -55,6 +61,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------- AUTH ----------------
 def create_access_token(data: dict):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     data.update({"exp": expire})
@@ -69,7 +76,7 @@ def verify_token(authorization: str = Header(...)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-
+# ---------------- AUTH ROUTES ----------------
 @app.post("/register")
 def register(data: RegisterData):
     db = get_db()
@@ -109,7 +116,7 @@ def login(data: LoginData):
 def welcome():
     return {"message": "Welcome to RTM backend"}
 
-
+# ---------------- CORE ----------------
 @app.post("/requirement")
 def add_requirement(data: Requirement, user=Depends(verify_token)):
     db = get_db()
@@ -149,7 +156,7 @@ def link_rtm(data: RTMmap, user=Depends(verify_token)):
     db.close()
     return {"message": "Successfully linked"}
 
-
+# ---------------- FETCH ----------------
 def fetch_data():
     db = get_db()
     cursor = db.cursor(dictionary=True)
@@ -165,7 +172,7 @@ def fetch_data():
 
     return requirements, testcases
 
-
+# ---------------- GEMINI ----------------
 def generate_rtm_mapping(requirements, testcases):
     req_text = "\n".join([
         f"{r['id']}: {r['title']} - {r['description']}"
@@ -186,17 +193,20 @@ Requirements:
 Test Cases:
 {tc_text}
 
-Return ONLY valid JSON in this format:
+Return ONLY valid JSON:
 [
-  {{"reqid": 1, "testids": [1,2]}},
-  {{"reqid": 2, "testids": [3]}}
+  {{"reqid": 1, "testids": [1,2]}}
 ]
-No explanation. No extra text.
 """
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-1.5-flash",
+        contents=prompt
+    )
+
     return response.text
 
+# ---------------- AUTO RTM ----------------
 @app.post("/auto-rtm")
 def auto_rtm(user=Depends(verify_token)):
     requirements, testcases = fetch_data()
@@ -212,11 +222,10 @@ def auto_rtm(user=Depends(verify_token)):
     cursor = db.cursor()
 
     for item in mapping:
-        reqid = item["reqid"]
         for tid in item["testids"]:
             cursor.execute(
                 "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
-                (reqid, tid)
+                (item["reqid"], tid)
             )
 
     db.commit()
@@ -225,7 +234,7 @@ def auto_rtm(user=Depends(verify_token)):
 
     return {"message": "AI RTM mapping completed"}
 
-
+# ---------------- VIEW ----------------
 @app.get("/requirements")
 def get_requirements(user=Depends(verify_token)):
     db = get_db()
@@ -235,10 +244,7 @@ def get_requirements(user=Depends(verify_token)):
     cursor.close()
     db.close()
 
-    return [
-        {"id": r[0], "title": r[1], "description": r[2], "priority": r[3]}
-        for r in rows
-    ]
+    return [{"id": r[0], "title": r[1], "description": r[2], "priority": r[3]} for r in rows]
 
 @app.get("/testcases")
 def get_testcases(user=Depends(verify_token)):
@@ -249,10 +255,7 @@ def get_testcases(user=Depends(verify_token)):
     cursor.close()
     db.close()
 
-    return [
-        {"id": r[0], "title": r[1], "description": r[2], "expected_result": r[3], "status": r[4]}
-        for r in rows
-    ]
+    return [{"id": r[0], "title": r[1], "description": r[2], "expected_result": r[3], "status": r[4]} for r in rows]
 
 @app.get("/rtm")
 def full_rtm(user=Depends(verify_token)):
