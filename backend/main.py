@@ -6,16 +6,16 @@ from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from google import genai
 import json
+import re
 
-# ---------------- CONFIG ----------------
 SECRET_KEY = "77777"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# 👉 PUT YOUR API KEY HERE
-client = genai.Client(api_key="YOUR_GEMINI_API_KEY")
+# Initialize Gemini AI client
+client = genai.Client(api_key="AIzaSyC-n0jOWoICXrzaqaPXhSx7x31clGvkpfk")
 
-# ---------------- DB ----------------
+# ---------------- Database ----------------
 def get_db():
     return mysql.connector.connect(
         host="localhost",
@@ -49,6 +49,9 @@ class RegisterData(BaseModel):
     username: str
     password: str
     role: str
+
+class FileUpload(BaseModel):
+    text: str
 
 # ---------------- APP ----------------
 app = FastAPI(title="RTM Backend")
@@ -160,29 +163,18 @@ def link_rtm(data: RTMmap, user=Depends(verify_token)):
 def fetch_data():
     db = get_db()
     cursor = db.cursor(dictionary=True)
-
     cursor.execute("SELECT * FROM requirements")
     requirements = cursor.fetchall()
-
     cursor.execute("SELECT * FROM test_cases")
     testcases = cursor.fetchall()
-
     cursor.close()
     db.close()
-
     return requirements, testcases
 
 # ---------------- GEMINI ----------------
 def generate_rtm_mapping(requirements, testcases):
-    req_text = "\n".join([
-        f"{r['id']}: {r['title']} - {r['description']}"
-        for r in requirements
-    ])
-
-    tc_text = "\n".join([
-        f"{t['id']}: {t['title']} - {t['description']}"
-        for t in testcases
-    ])
+    req_text = "\n".join([f"{r['id']}: {r['title']} - {r['description']}" for r in requirements])
+    tc_text = "\n".join([f"{t['id']}: {t['title']} - {t['description']}" for t in testcases])
 
     prompt = f"""
 Match each requirement with relevant test cases.
@@ -198,41 +190,102 @@ Return ONLY valid JSON:
   {{"reqid": 1, "testids": [1,2]}}
 ]
 """
-
     response = client.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         contents=prompt
     )
-
     return response.text
 
 # ---------------- AUTO RTM ----------------
 @app.post("/auto-rtm")
 def auto_rtm(user=Depends(verify_token)):
     requirements, testcases = fetch_data()
-
     ai_output = generate_rtm_mapping(requirements, testcases)
-
+    cleaned = re.sub(r"```json|```", "", ai_output).strip()
     try:
-        mapping = json.loads(ai_output)
-    except:
-        raise HTTPException(status_code=500, detail=f"Invalid AI response: {ai_output}")
+        mapping = json.loads(cleaned)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Invalid AI response: {cleaned}")
 
     db = get_db()
     cursor = db.cursor()
+    for item in mapping:
+        reqid = item.get("reqid")
+        testids = item.get("testids", [])
+        for tid in testids:
+            try:
+                cursor.execute(
+                    "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
+                    (reqid, tid)
+                )
+            except: pass
+    db.commit()
+    cursor.close()
+    db.close()
+    return {"message": "AI RTM mapping completed"}
+
+# ---------------- AUTO RTM FROM FILE ----------------
+@app.post("/auto-rtm-file")
+def auto_rtm_file(data: FileUpload, user=Depends(verify_token)):
+    db = get_db()
+    cursor = db.cursor()
+
+    # Simple parser: lines starting with "R:" -> requirement, "T:" -> testcase
+    requirements = []
+    testcases = []
+    lines = data.text.splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line: continue
+        if line.startswith("R:"):
+            parts = line[2:].split("|")  # e.g. "Title|Description|Priority"
+            title = parts[0].strip()
+            desc = parts[1].strip() if len(parts) > 1 else ""
+            priority = parts[2].strip() if len(parts) > 2 else "Medium"
+            cursor.execute(
+                "INSERT INTO requirements (title, description, priority) VALUES (%s,%s,%s)",
+                (title, desc, priority)
+            )
+            requirements.append({"id": cursor.lastrowid, "title": title, "description": desc})
+        elif line.startswith("T:"):
+            parts = line[2:].split("|")  # e.g. "Title|Description|Expected|Status"
+            title = parts[0].strip()
+            desc = parts[1].strip() if len(parts) > 1 else ""
+            expected = parts[2].strip() if len(parts) > 2 else ""
+            status = parts[3].strip() if len(parts) > 3 else "Pending"
+            cursor.execute(
+                "INSERT INTO test_cases (title, description, expected_result, status) VALUES (%s,%s,%s,%s)",
+                (title, desc, expected, status)
+            )
+            testcases.append({"id": cursor.lastrowid, "title": title, "description": desc})
+
+    db.commit()
+
+    # AI mapping
+    ai_output = generate_rtm_mapping(requirements, testcases)
+    cleaned = re.sub(r"```json|```", "", ai_output).strip()
+    try:
+        mapping = json.loads(cleaned)
+    except Exception as e:
+        cursor.close()
+        db.close()
+        raise HTTPException(status_code=500, detail=f"Invalid AI response: {cleaned}")
 
     for item in mapping:
-        for tid in item["testids"]:
-            cursor.execute(
-                "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
-                (item["reqid"], tid)
-            )
+        reqid = item.get("reqid")
+        testids = item.get("testids", [])
+        for tid in testids:
+            try:
+                cursor.execute(
+                    "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
+                    (reqid, tid)
+                )
+            except: pass
 
     db.commit()
     cursor.close()
     db.close()
-
-    return {"message": "AI RTM mapping completed"}
+    return {"message": "File uploaded and AI RTM mapping completed"}
 
 # ---------------- VIEW ----------------
 @app.get("/requirements")
@@ -243,7 +296,6 @@ def get_requirements(user=Depends(verify_token)):
     rows = cursor.fetchall()
     cursor.close()
     db.close()
-
     return [{"id": r[0], "title": r[1], "description": r[2], "priority": r[3]} for r in rows]
 
 @app.get("/testcases")
@@ -254,7 +306,6 @@ def get_testcases(user=Depends(verify_token)):
     rows = cursor.fetchall()
     cursor.close()
     db.close()
-
     return [{"id": r[0], "title": r[1], "description": r[2], "expected_result": r[3], "status": r[4]} for r in rows]
 
 @app.get("/rtm")
@@ -271,7 +322,6 @@ def full_rtm(user=Depends(verify_token)):
     rows = cursor.fetchall()
     cursor.close()
     db.close()
-
     return [{
         "requirement_id": r[0],
         "requirement_title": r[1],
