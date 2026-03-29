@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.env
+env/
+venv/
+ENV/
+.venv/
+
+# Logs
+*.log
+
+# Database
+*.sqlite3
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Packages
+*.egg
+*.egg-info/
+dist/
+build/
+
+# FastAPI / Deployment
+*.env
+
+# Secret API keys
+*.key
+*.pem

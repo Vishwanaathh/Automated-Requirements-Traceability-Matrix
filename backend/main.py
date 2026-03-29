@@ -7,13 +7,18 @@ from jose import jwt, JWTError
 from google import genai
 import json
 import re
+from dotenv import load_dotenv
+import os
 
-SECRET_KEY = "77777"
+# ---------------- ENV ----------------
+load_dotenv()
+SECRET_KEY = os.getenv("SECRET_KEY", "77777")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # Initialize Gemini AI client
-client = genai.Client(api_key="AIzaSyC-n0jOWoICXrzaqaPXhSx7x31clGvkpfk")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ---------------- Database ----------------
 def get_db():
@@ -119,7 +124,7 @@ def login(data: LoginData):
 def welcome():
     return {"message": "Welcome to RTM backend"}
 
-# ---------------- CORE ----------------
+# ---------------- CORE ROUTES ----------------
 @app.post("/requirement")
 def add_requirement(data: Requirement, user=Depends(verify_token)):
     db = get_db()
@@ -159,7 +164,7 @@ def link_rtm(data: RTMmap, user=Depends(verify_token)):
     db.close()
     return {"message": "Successfully linked"}
 
-# ---------------- FETCH ----------------
+# ---------------- FETCH DATA ----------------
 def fetch_data():
     db = get_db()
     cursor = db.cursor(dictionary=True)
@@ -171,7 +176,7 @@ def fetch_data():
     db.close()
     return requirements, testcases
 
-# ---------------- GEMINI ----------------
+# ---------------- GEMINI AI ----------------
 def generate_rtm_mapping(requirements, testcases):
     req_text = "\n".join([f"{r['id']}: {r['title']} - {r['description']}" for r in requirements])
     tc_text = "\n".join([f"{t['id']}: {t['title']} - {t['description']}" for t in testcases])
@@ -218,7 +223,8 @@ def auto_rtm(user=Depends(verify_token)):
                     "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
                     (reqid, tid)
                 )
-            except: pass
+            except: 
+                pass
     db.commit()
     cursor.close()
     db.close()
@@ -230,15 +236,15 @@ def auto_rtm_file(data: FileUpload, user=Depends(verify_token)):
     db = get_db()
     cursor = db.cursor()
 
-    # Simple parser: lines starting with "R:" -> requirement, "T:" -> testcase
     requirements = []
     testcases = []
     lines = data.text.splitlines()
     for line in lines:
         line = line.strip()
-        if not line: continue
+        if not line: 
+            continue
         if line.startswith("R:"):
-            parts = line[2:].split("|")  # e.g. "Title|Description|Priority"
+            parts = line[2:].split("|")
             title = parts[0].strip()
             desc = parts[1].strip() if len(parts) > 1 else ""
             priority = parts[2].strip() if len(parts) > 2 else "Medium"
@@ -248,7 +254,7 @@ def auto_rtm_file(data: FileUpload, user=Depends(verify_token)):
             )
             requirements.append({"id": cursor.lastrowid, "title": title, "description": desc})
         elif line.startswith("T:"):
-            parts = line[2:].split("|")  # e.g. "Title|Description|Expected|Status"
+            parts = line[2:].split("|")
             title = parts[0].strip()
             desc = parts[1].strip() if len(parts) > 1 else ""
             expected = parts[2].strip() if len(parts) > 2 else ""
@@ -261,7 +267,6 @@ def auto_rtm_file(data: FileUpload, user=Depends(verify_token)):
 
     db.commit()
 
-    # AI mapping
     ai_output = generate_rtm_mapping(requirements, testcases)
     cleaned = re.sub(r"```json|```", "", ai_output).strip()
     try:
@@ -280,7 +285,8 @@ def auto_rtm_file(data: FileUpload, user=Depends(verify_token)):
                     "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
                     (reqid, tid)
                 )
-            except: pass
+            except: 
+                pass
 
     db.commit()
     cursor.close()
