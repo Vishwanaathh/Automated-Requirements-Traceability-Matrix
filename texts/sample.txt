@@ -1,0 +1,9 @@
+R: User Login|The system should allow users to login with username and password|High
+T: Login with valid credentials|User enters correct username and password|Dashboard opens|Pass
+R: Password Recovery|Users should be able to recover their password using email|Medium
+T: Recover password via email|User requests password reset link via email|Email received|Pending
+T: Login with invalid credentials|User enters wrong username or password|Error message displayed|Fail
+R: Profile Update|Users can update profile information like name and contact|Low
+T: Update name and contact|User updates name and phone number|Changes saved|Pass
+R: Logout|Users should be able to logout from the system|High
+T: Logout|User clicks logout button|User session ends|Pass
