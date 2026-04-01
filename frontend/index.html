@@ -12,20 +12,13 @@ body {
     color: #fff;
 }
 
-h1 {
-    text-align: center;
-    padding: 20px;
-    margin: 0;
-    background: #111;
-    letter-spacing: 1px;
-}
+h1 { text-align: center; padding: 20px; background: #111; }
 
 .section {
     background: #2a2a40;
     border-radius: 12px;
     padding: 20px;
     margin: 20px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.5);
 }
 
 .hidden { display: none; }
@@ -35,7 +28,6 @@ input, select {
     margin: 6px;
     border-radius: 6px;
     border: none;
-    outline: none;
 }
 
 button {
@@ -46,21 +38,22 @@ button {
     cursor: pointer;
     background: #4CAF50;
     color: white;
-    transition: 0.3s;
 }
 
-button:hover { background: #45a049; transform: scale(1.05); }
+button:disabled {
+    background: #777;
+    cursor: not-allowed;
+}
 
 button.logout { background: #e74c3c; }
-button.logout:hover { background: #c0392b; }
+button.danger { background: #ff4444; }
+button.download { background: #3498db; }
 
 table {
     width: 95%;
     margin: 20px auto;
     border-collapse: collapse;
     background: #1c1c2e;
-    border-radius: 10px;
-    overflow: hidden;
 }
 
 th, td {
@@ -69,11 +62,9 @@ th, td {
     text-align: center;
 }
 
-th { background: #111; }
-
-.status-Pass { color: #00ff9c; font-weight: bold; }
-.status-Fail { color: #ff4c4c; font-weight: bold; }
-.status-Pending { color: #ffc107; font-weight: bold; }
+.status-Pass { color: #00ff9c; }
+.status-Fail { color: #ff4c4c; }
+.status-Pending { color: #ffc107; }
 
 #log {
     background: #000;
@@ -82,44 +73,64 @@ th { background: #111; }
     height: 120px;
     overflow-y: auto;
     margin: 20px;
-    border-radius: 10px;
-    font-size: 13px;
+}
+
+/* 🔥 LOADING OVERLAY */
+#loader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    z-index: 999;
+    display: none;
 }
 </style>
 </head>
 
 <body>
 
-<h1>Requirement Traceability Matrix 🚀</h1>
+<div id="loader">⏳ Processing...</div>
+
+<h1>RTM System 🚀</h1>
 
 <div id="registerPage" class="section">
 <h2>Register</h2>
 <input id="reg_username" placeholder="Username">
 <input id="reg_password" placeholder="Password">
 <input id="reg_role" placeholder="Role">
-<br>
-<button onclick="register()">Register</button>
-<p>Already registered? <a href="#" onclick="showLogin()">Login</a></p>
+<button onclick="register(this)">Register</button>
+<p><a href="#" onclick="showLogin()">Login</a></p>
 </div>
 
 <div id="loginPage" class="section hidden">
 <h2>Login</h2>
 <input id="login_username" placeholder="Username">
 <input id="login_password" placeholder="Password">
-<br>
-<button onclick="login()">Login</button>
-<p><a href="#" onclick="showRegister()">Back to Register</a></p>
+<button onclick="login(this)">Login</button>
+<p><a href="#" onclick="showRegister()">Register</a></p>
 </div>
 
 <div id="mainPage" class="hidden">
 
 <button class="logout" onclick="logout()">Logout</button>
+<button class="danger" onclick="clearDB(this)">⚠️ Clear DB</button>
 
 <div class="section">
-<h2>Upload Requirements & Test Cases</h2>
-<input type="file" id="fileInput" accept=".txt">
-<br>
-<button onclick="uploadFile()">Upload & AI Map 🤖</button>
+<h2>Upload Structured File</h2>
+<input type="file" id="fileInput">
+<button onclick="uploadFile(this)">Upload & AI Map</button>
+</div>
+
+<div class="section">
+<h2>Upload SRS (FULL AI)</h2>
+<input type="file" id="srsFile">
+<button onclick="uploadSRS(this)">Upload SRS 🤖</button>
 </div>
 
 <div class="section">
@@ -127,20 +138,12 @@ th { background: #111; }
 <input id="r_title" placeholder="Title">
 <input id="r_desc" placeholder="Description">
 <input id="r_priority" placeholder="Priority">
-<br>
-<button onclick="addRequirement()">Add</button>
+<button onclick="addRequirement(this)">Add</button>
 <button onclick="getRequirements()">View</button>
 </div>
 
 <table id="reqTable" class="hidden">
-<thead>
-<tr>
-<th>ID</th>
-<th>Title</th>
-<th>Description</th>
-<th>Priority</th>
-</tr>
-</thead>
+<thead><tr><th>ID</th><th>Title</th><th>Description</th><th>Priority</th></tr></thead>
 <tbody id="reqBody"></tbody>
 </table>
 
@@ -154,43 +157,27 @@ th { background: #111; }
 <option>Fail</option>
 <option>Pending</option>
 </select>
-<br>
-<button onclick="addTestCase()">Add</button>
+<button onclick="addTestCase(this)">Add</button>
 <button onclick="getTestCases()">View</button>
 </div>
 
 <table id="tcTable" class="hidden">
-<thead>
-<tr>
-<th>ID</th>
-<th>Title</th>
-<th>Description</th>
-<th>Status</th>
-</tr>
-</thead>
+<thead><tr><th>ID</th><th>Title</th><th>Description</th><th>Status</th></tr></thead>
 <tbody id="tcBody"></tbody>
 </table>
 
 <div class="section">
-<h2>RTM Mapping</h2>
-<input id="req_id" type="number" placeholder="Requirement ID">
-<input id="tc_id" type="number" placeholder="Test Case ID">
-<br>
-<button onclick="linkRTM()">Manual Link</button>
-<button onclick="getRTM()">View RTM</button>
-<button onclick="autoRTM()">🤖 Auto Map (AI)</button>
+<h2>RTM</h2>
+<input id="req_id" type="number" placeholder="Req ID">
+<input id="tc_id" type="number" placeholder="TC ID"><br>
+<button onclick="linkRTM(this)">Manual Link</button>
+<button onclick="autoRTM(this)">AI Map</button>
+<button onclick="getRTM()">View</button>
+<button class="download" onclick="downloadRTM(this)">⬇️ Download RTM</button>
 </div>
 
 <table>
-<thead>
-<tr>
-<th>Req ID</th>
-<th>Requirement</th>
-<th>TC ID</th>
-<th>Test Case</th>
-<th>Status</th>
-</tr>
-</thead>
+<thead><tr><th>Req</th><th>Requirement</th><th>TC</th><th>TestCase</th><th>Status</th></tr></thead>
 <tbody id="rtmBody"></tbody>
 </table>
 
@@ -200,204 +187,174 @@ th { background: #111; }
 
 <script>
 const API = "http://127.0.0.1:8000"
-const logBox = document.getElementById("log")
 
-function showLogin() {
-    registerPage.classList.add("hidden")
-    loginPage.classList.remove("hidden")
+function showLoader(){document.getElementById("loader").style.display="flex"}
+function hideLoader(){document.getElementById("loader").style.display="none"}
+
+function btnLoad(btn, text){
+    btn.disabled = true
+    btn.dataset.old = btn.innerText
+    btn.innerText = text
 }
 
-function showRegister() {
-    loginPage.classList.add("hidden")
-    registerPage.classList.remove("hidden")
+function btnReset(btn){
+    btn.disabled = false
+    btn.innerText = btn.dataset.old
 }
 
-function showMain() {
-    registerPage.classList.add("hidden")
-    loginPage.classList.add("hidden")
-    mainPage.classList.remove("hidden")
+function authHeaders(){
+    return {"Content-Type":"application/json","Authorization":"Bearer "+localStorage.getItem("token")}
 }
 
-function logout() {
-    localStorage.removeItem("token")
-    location.reload()
+function showLogin(){registerPage.classList.add("hidden");loginPage.classList.remove("hidden")}
+function showRegister(){loginPage.classList.add("hidden");registerPage.classList.remove("hidden")}
+function showMain(){registerPage.classList.add("hidden");loginPage.classList.add("hidden");mainPage.classList.remove("hidden")}
+function logout(){localStorage.removeItem("token");location.reload()}
+
+function log(msg){document.getElementById("log").innerText += msg+"\n"}
+
+/* -------- AUTH -------- */
+
+function register(btn){
+btnLoad(btn,"Registering...")
+fetch(API+"/register",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({username:reg_username.value,password:reg_password.value,role:reg_role.value})})
+.then(()=>{btnReset(btn);showLogin()})
 }
 
-function authHeaders() {
-    return {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + localStorage.getItem("token")
-    }
+function login(btn){
+btnLoad(btn,"Logging in...")
+fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({username:login_username.value,password:login_password.value})})
+.then(r=>r.json()).then(d=>{
+localStorage.setItem("token",d.access_token)
+btnReset(btn)
+showMain()
+})
 }
 
-function log(msg) {
-    logBox.textContent += msg + "\n"
+/* -------- CORE -------- */
+
+function addRequirement(btn){
+btnLoad(btn,"Adding...")
+fetch(API+"/requirement",{method:"POST",headers:authHeaders(),
+body:JSON.stringify({title:r_title.value,description:r_desc.value,priority:r_priority.value})})
+.then(()=>{btnReset(btn);log("Requirement added")})
 }
 
-function register() {
-    fetch(API + "/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            username: reg_username.value,
-            password: reg_password.value,
-            role: reg_role.value
-        })
-    }).then(() => {
-        alert("Registered")
-        showLogin()
-    })
+function addTestCase(btn){
+btnLoad(btn,"Adding...")
+fetch(API+"/testcase",{method:"POST",headers:authHeaders(),
+body:JSON.stringify({title:t_title.value,description:t_desc.value,expected_result:t_expected.value,status:t_status.value})})
+.then(()=>{btnReset(btn);log("Test case added")})
 }
 
-function login() {
-    fetch(API + "/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            username: login_username.value,
-            password: login_password.value
-        })
-    })
-    .then(res => {
-        if (!res.ok) throw new Error("Login failed")
-        return res.json()
-    })
-    .then(data => {
-        localStorage.setItem("token", data.access_token)
-        showMain()
-    })
-    .catch(err => alert(err.message))
+function linkRTM(btn){
+btnLoad(btn,"Linking...")
+fetch(API+"/rtmmap",{method:"POST",headers:authHeaders(),
+body:JSON.stringify({reqid:Number(req_id.value),testid:Number(tc_id.value)})})
+.then(()=>{btnReset(btn);log("Linked")})
 }
 
-function addRequirement() {
-    fetch(API + "/requirement", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-            title: r_title.value,
-            description: r_desc.value,
-            priority: r_priority.value
-        })
-    }).then(() => log("Requirement added"))
+/* -------- AI -------- */
+
+function autoRTM(btn){
+btnLoad(btn,"AI Mapping...")
+showLoader()
+fetch(API+"/auto-rtm",{method:"POST",headers:authHeaders()})
+.then(()=>getRTM())
+.finally(()=>{btnReset(btn);hideLoader()})
 }
 
-function addTestCase() {
-    fetch(API + "/testcase", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-            title: t_title.value,
-            description: t_desc.value,
-            expected_result: t_expected.value,
-            status: t_status.value
-        })
-    }).then(() => log("Test case added"))
+function uploadFile(btn){
+btnLoad(btn,"Uploading...")
+showLoader()
+const file=fileInput.files[0]
+const reader=new FileReader()
+reader.onload=e=>{
+fetch(API+"/auto-rtm-file",{method:"POST",headers:authHeaders(),
+body:JSON.stringify({text:e.target.result})})
+.then(()=>getRTM())
+.finally(()=>{btnReset(btn);hideLoader()})
+}
+reader.readAsText(file)
 }
 
-function getRequirements() {
-    fetch(API + "/requirements", { headers: authHeaders() })
-    .then(res => res.json())
-    .then(data => {
-        reqTable.classList.remove("hidden")
-        reqBody.innerHTML = ""
-        data.forEach(r => {
-            reqBody.innerHTML += `
-            <tr>
-                <td>${r.id}</td>
-                <td>${r.title}</td>
-                <td>${r.description}</td>
-                <td>${r.priority}</td>
-            </tr>`
-        })
-    })
+function uploadSRS(btn){
+btnLoad(btn,"Processing SRS...")
+showLoader()
+const file=srsFile.files[0]
+const reader=new FileReader()
+reader.onload=e=>{
+fetch(API+"/auto-rtm-srs",{method:"POST",headers:authHeaders(),
+body:JSON.stringify({text:e.target.result})})
+.then(()=>getRTM())
+.finally(()=>{btnReset(btn);hideLoader()})
+}
+reader.readAsText(file)
 }
 
-function getTestCases() {
-    fetch(API + "/testcases", { headers: authHeaders() })
-    .then(res => res.json())
-    .then(data => {
-        tcTable.classList.remove("hidden")
-        tcBody.innerHTML = ""
-        data.forEach(t => {
-            tcBody.innerHTML += `
-            <tr>
-                <td>${t.id}</td>
-                <td>${t.title}</td>
-                <td>${t.description}</td>
-                <td>${t.status}</td>
-            </tr>`
-        })
-    })
+/* -------- VIEW -------- */
+
+function getRequirements(){
+fetch(API+"/requirements",{headers:authHeaders()})
+.then(r=>r.json()).then(d=>{
+reqTable.classList.remove("hidden");reqBody.innerHTML=""
+d.forEach(x=>reqBody.innerHTML+=`<tr><td>${x.id}</td><td>${x.title}</td><td>${x.description}</td><td>${x.priority}</td></tr>`)
+})
 }
 
-function linkRTM() {
-    fetch(API + "/rtmmap", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({
-            reqid: Number(req_id.value),
-            testid: Number(tc_id.value)
-        })
-    }).then(() => log("Manual link done"))
+function getTestCases(){
+fetch(API+"/testcases",{headers:authHeaders()})
+.then(r=>r.json()).then(d=>{
+tcTable.classList.remove("hidden");tcBody.innerHTML=""
+d.forEach(x=>tcBody.innerHTML+=`<tr><td>${x.id}</td><td>${x.title}</td><td>${x.description}</td><td>${x.status}</td></tr>`)
+})
 }
 
-function autoRTM() {
-    fetch(API + "/auto-rtm", {
-        method: "POST",
-        headers: authHeaders()
-    })
-    .then(res => res.json())
-    .then(() => {
-        log("AI mapping completed 🤖")
-        getRTM()
-    })
-    .catch(err => log("AI mapping failed"))
+function getRTM(){
+fetch(API+"/rtm",{headers:authHeaders()})
+.then(r=>r.json()).then(d=>{
+rtmBody.innerHTML=""
+d.forEach(x=>rtmBody.innerHTML+=`<tr>
+<td>${x.requirement_id}</td>
+<td>${x.requirement_title}</td>
+<td>${x.testcase_id}</td>
+<td>${x.testcase_title}</td>
+<td class="status-${x.status}">${x.status}</td>
+</tr>`)
+})
 }
 
-function uploadFile() {
-    const file = document.getElementById("fileInput").files[0];
-    if (!file) return alert("Select a text file first");
+/* -------- EXTRA -------- */
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const content = e.target.result;
-
-        fetch(API + "/auto-rtm-file", {
-            method: "POST",
-            headers: authHeaders(),
-            body: JSON.stringify({ text: content })
-        })
-        .then(res => res.json())
-        .then(data => {
-            log("AI mapping completed from file 🤖")
-            getRTM()
-        })
-        .catch(err => log("AI mapping failed: " + err))
-    };
-    reader.readAsText(file);
+function clearDB(btn){
+if(!confirm("Delete everything?"))return
+btnLoad(btn,"Clearing...")
+fetch(API+"/clear-db",{method:"DELETE",headers:authHeaders()})
+.then(()=>{btnReset(btn);log("DB cleared");location.reload()})
 }
 
-function getRTM() {
-    fetch(API + "/rtm", { headers: authHeaders() })
-    .then(res => res.json())
-    .then(data => {
-        rtmBody.innerHTML = ""
-        data.forEach(r => {
-            rtmBody.innerHTML += `
-            <tr>
-                <td>${r.requirement_id}</td>
-                <td>${r.requirement_title}</td>
-                <td>${r.testcase_id}</td>
-                <td>${r.testcase_title}</td>
-                <td class="status-${r.status}">${r.status}</td>
-            </tr>`
-        })
-    })
+function downloadRTM(btn){
+btnLoad(btn,"Downloading...")
+fetch(API+"/rtm",{headers:authHeaders()})
+.then(r=>r.json())
+.then(data=>{
+let csv="Requirement ID,Requirement Title,Test Case ID,Test Case Title,Status\n"
+data.forEach(r=>{
+csv+=`${r.requirement_id},"${r.requirement_title}",${r.testcase_id},"${r.testcase_title}",${r.status}\n`
+})
+const blob=new Blob([csv],{type:"text/csv"})
+const url=URL.createObjectURL(blob)
+const a=document.createElement("a")
+a.href=url
+a.download="RTM.csv"
+a.click()
+})
+.finally(()=>btnReset(btn))
 }
 
-if (localStorage.getItem("token")) {
-    showMain()
-}
+if(localStorage.getItem("token"))showMain()
 </script>
 
 </body>

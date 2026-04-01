@@ -10,17 +10,19 @@ import re
 from dotenv import load_dotenv
 import os
 
-# ---------------- ENV ----------------
 load_dotenv()
-SECRET_KEY = os.getenv("SECRET_KEY", "77777")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+SECRET_KEY = "77777"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-# Initialize Gemini AI client
-client = genai.Client(api_key=GEMINI_API_KEY)
+API_KEY = os.getenv("GEMINI_API_KEY")
 
-# ---------------- Database ----------------
+if not API_KEY:
+    raise Exception("GEMINI_API_KEY not found")
+
+client = genai.Client(api_key=API_KEY.strip())
+
 def get_db():
     return mysql.connector.connect(
         host="localhost",
@@ -30,10 +32,14 @@ def get_db():
         database="rtm"
     )
 
-# ---------------- MODELS ----------------
 class LoginData(BaseModel):
     username: str
     password: str
+
+class RegisterData(BaseModel):
+    username: str
+    password: str
+    role: str
 
 class Requirement(BaseModel):
     title: str
@@ -50,16 +56,10 @@ class RTMmap(BaseModel):
     reqid: int
     testid: int
 
-class RegisterData(BaseModel):
-    username: str
-    password: str
-    role: str
-
 class FileUpload(BaseModel):
     text: str
 
-# ---------------- APP ----------------
-app = FastAPI(title="RTM Backend")
+app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
@@ -69,7 +69,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------- AUTH ----------------
 def create_access_token(data: dict):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     data.update({"exp": expire})
@@ -84,15 +83,12 @@ def verify_token(authorization: str = Header(...)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-# ---------------- AUTH ROUTES ----------------
 @app.post("/register")
 def register(data: RegisterData):
     db = get_db()
     cursor = db.cursor()
-    cursor.execute(
-        "INSERT INTO users VALUES (%s,%s,%s)",
-        (data.username, data.password, data.role)
-    )
+    cursor.execute("INSERT INTO users VALUES (%s,%s,%s)",
+                   (data.username, data.password, data.role))
     db.commit()
     cursor.close()
     db.close()
@@ -102,10 +98,8 @@ def register(data: RegisterData):
 def login(data: LoginData):
     db = get_db()
     cursor = db.cursor(dictionary=True)
-    cursor.execute(
-        "SELECT * FROM users WHERE username=%s AND password=%s",
-        (data.username, data.password)
-    )
+    cursor.execute("SELECT * FROM users WHERE username=%s AND password=%s",
+                   (data.username, data.password))
     user = cursor.fetchone()
     cursor.close()
     db.close()
@@ -113,18 +107,13 @@ def login(data: LoginData):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token({
-        "username": user["username"],
-        "role": user["role"]
-    })
-
+    token = create_access_token({"username": user["username"], "role": user["role"]})
     return {"access_token": token}
 
 @app.get("/")
-def welcome():
-    return {"message": "Welcome to RTM backend"}
+def home():
+    return {"message": "RTM Backend Running"}
 
-# ---------------- CORE ROUTES ----------------
 @app.post("/requirement")
 def add_requirement(data: Requirement, user=Depends(verify_token)):
     db = get_db()
@@ -162,138 +151,109 @@ def link_rtm(data: RTMmap, user=Depends(verify_token)):
     db.commit()
     cursor.close()
     db.close()
-    return {"message": "Successfully linked"}
+    return {"message": "Linked"}
 
-# ---------------- FETCH DATA ----------------
 def fetch_data():
     db = get_db()
     cursor = db.cursor(dictionary=True)
     cursor.execute("SELECT * FROM requirements")
-    requirements = cursor.fetchall()
+    req = cursor.fetchall()
     cursor.execute("SELECT * FROM test_cases")
-    testcases = cursor.fetchall()
+    tc = cursor.fetchall()
     cursor.close()
     db.close()
-    return requirements, testcases
+    return req, tc
 
-# ---------------- GEMINI AI ----------------
-def generate_rtm_mapping(requirements, testcases):
-    req_text = "\n".join([f"{r['id']}: {r['title']} - {r['description']}" for r in requirements])
-    tc_text = "\n".join([f"{t['id']}: {t['title']} - {t['description']}" for t in testcases])
-
+def generate_mapping(req, tc):
     prompt = f"""
-Match each requirement with relevant test cases.
+Match requirements to test cases.
 
 Requirements:
-{req_text}
+{req}
 
 Test Cases:
-{tc_text}
+{tc}
 
-Return ONLY valid JSON:
-[
-  {{"reqid": 1, "testids": [1,2]}}
-]
+Return ONLY JSON:
+[{{"reqid":1,"testids":[1,2]}}]
 """
-    response = client.models.generate_content(
+    res = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt
     )
-    return response.text
+    return res.text
 
-# ---------------- AUTO RTM ----------------
-@app.post("/auto-rtm")
-def auto_rtm(user=Depends(verify_token)):
-    requirements, testcases = fetch_data()
-    ai_output = generate_rtm_mapping(requirements, testcases)
-    cleaned = re.sub(r"```json|```", "", ai_output).strip()
-    try:
-        mapping = json.loads(cleaned)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Invalid AI response: {cleaned}")
-
-    db = get_db()
-    cursor = db.cursor()
-    for item in mapping:
-        reqid = item.get("reqid")
-        testids = item.get("testids", [])
-        for tid in testids:
-            try:
-                cursor.execute(
-                    "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
-                    (reqid, tid)
-                )
-            except: 
-                pass
-    db.commit()
-    cursor.close()
-    db.close()
-    return {"message": "AI RTM mapping completed"}
-
-# ---------------- AUTO RTM FROM FILE ----------------
-@app.post("/auto-rtm-file")
-def auto_rtm_file(data: FileUpload, user=Depends(verify_token)):
+@app.post("/auto-rtm-srs")
+def auto_rtm_srs(data: FileUpload, user=Depends(verify_token)):
     db = get_db()
     cursor = db.cursor()
 
-    requirements = []
-    testcases = []
-    lines = data.text.splitlines()
-    for line in lines:
-        line = line.strip()
-        if not line: 
-            continue
-        if line.startswith("R:"):
-            parts = line[2:].split("|")
-            title = parts[0].strip()
-            desc = parts[1].strip() if len(parts) > 1 else ""
-            priority = parts[2].strip() if len(parts) > 2 else "Medium"
-            cursor.execute(
-                "INSERT INTO requirements (title, description, priority) VALUES (%s,%s,%s)",
-                (title, desc, priority)
-            )
-            requirements.append({"id": cursor.lastrowid, "title": title, "description": desc})
-        elif line.startswith("T:"):
-            parts = line[2:].split("|")
-            title = parts[0].strip()
-            desc = parts[1].strip() if len(parts) > 1 else ""
-            expected = parts[2].strip() if len(parts) > 2 else ""
-            status = parts[3].strip() if len(parts) > 3 else "Pending"
-            cursor.execute(
-                "INSERT INTO test_cases (title, description, expected_result, status) VALUES (%s,%s,%s,%s)",
-                (title, desc, expected, status)
-            )
-            testcases.append({"id": cursor.lastrowid, "title": title, "description": desc})
+    extract_prompt = f"""
+You are an expert QA engineer.
+
+From this SRS document:
+{data.text}
+
+Extract:
+1. Requirements
+2. Test cases
+
+Return JSON:
+{{
+  "requirements":[{{"title":"","description":""}}],
+  "testcases":[{{"title":"","description":"","expected":""}}]
+}}
+"""
+
+    res = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=extract_prompt
+    )
+
+    cleaned = re.sub(r"```json|```", "", res.text).strip()
+
+    try:
+        parsed = json.loads(cleaned)
+    except:
+        raise HTTPException(status_code=500, detail=f"AI returned invalid JSON:\n{cleaned}")
+
+    for r in parsed.get("requirements", []):
+        cursor.execute(
+            "INSERT INTO requirements (title, description, priority) VALUES (%s,%s,%s)",
+            (r["title"], r["description"], "Medium")
+        )
+
+    for t in parsed.get("testcases", []):
+        cursor.execute(
+            "INSERT INTO test_cases (title, description, expected_result, status) VALUES (%s,%s,%s,%s)",
+            (t["title"], t["description"], t.get("expected",""), "Pending")
+        )
 
     db.commit()
 
-    ai_output = generate_rtm_mapping(requirements, testcases)
-    cleaned = re.sub(r"```json|```", "", ai_output).strip()
-    try:
-        mapping = json.loads(cleaned)
-    except Exception as e:
-        cursor.close()
-        db.close()
-        raise HTTPException(status_code=500, detail=f"Invalid AI response: {cleaned}")
+    req, tc = fetch_data()
 
-    for item in mapping:
-        reqid = item.get("reqid")
-        testids = item.get("testids", [])
-        for tid in testids:
+    try:
+        mapping = json.loads(re.sub(r"```json|```", "", generate_mapping(req, tc)))
+    except:
+        raise HTTPException(status_code=500, detail="Mapping failed")
+
+    for m in mapping:
+        for tid in m.get("testids", []):
             try:
                 cursor.execute(
                     "INSERT INTO requirement_testcase_map (requirement_id, testcase_id) VALUES (%s,%s)",
-                    (reqid, tid)
+                    (m["reqid"], tid)
                 )
-            except: 
+            except:
                 pass
 
     db.commit()
     cursor.close()
     db.close()
-    return {"message": "File uploaded and AI RTM mapping completed"}
 
-# ---------------- VIEW ----------------
+    return {"message": "SRS processed and RTM generated"}
+
 @app.get("/requirements")
 def get_requirements(user=Depends(verify_token)):
     db = get_db()
@@ -315,7 +275,7 @@ def get_testcases(user=Depends(verify_token)):
     return [{"id": r[0], "title": r[1], "description": r[2], "expected_result": r[3], "status": r[4]} for r in rows]
 
 @app.get("/rtm")
-def full_rtm(user=Depends(verify_token)):
+def get_rtm(user=Depends(verify_token)):
     db = get_db()
     cursor = db.cursor()
     cursor.execute("""
@@ -323,11 +283,12 @@ def full_rtm(user=Depends(verify_token)):
         FROM requirement_testcase_map m
         JOIN requirements r ON m.requirement_id = r.id
         JOIN test_cases t ON m.testcase_id = t.id
-        ORDER BY r.id, t.id
+        ORDER BY r.id
     """)
     rows = cursor.fetchall()
     cursor.close()
     db.close()
+
     return [{
         "requirement_id": r[0],
         "requirement_title": r[1],
@@ -335,3 +296,17 @@ def full_rtm(user=Depends(verify_token)):
         "testcase_title": r[3],
         "status": r[4]
     } for r in rows]
+
+@app.delete("/clear-db")
+def clear_db(user=Depends(verify_token)):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SET FOREIGN_KEY_CHECKS=0")
+    cursor.execute("TRUNCATE requirement_testcase_map")
+    cursor.execute("TRUNCATE requirements")
+    cursor.execute("TRUNCATE test_cases")
+    cursor.execute("SET FOREIGN_KEY_CHECKS=1")
+    db.commit()
+    cursor.close()
+    db.close()
+    return {"message": "Database cleared"}

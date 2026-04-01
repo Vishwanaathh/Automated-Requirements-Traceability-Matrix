@@ -1,0 +1,59 @@
+Software Requirements Specification (SRS)
+Project: Online Library Management System
+
+1. Introduction
+This system allows users to search, borrow, and manage books online.
+
+2. Functional Requirements
+
+FR1: User Registration
+Users should be able to create an account using username and password.
+
+FR2: User Login
+Registered users should be able to log into the system securely.
+
+FR3: Search Books
+Users should be able to search books by title, author, or category.
+
+FR4: Borrow Book
+Users should be able to borrow available books.
+
+FR5: Return Book
+Users should be able to return borrowed books.
+
+FR6: Admin Add Book
+Admin should be able to add new books to the system.
+
+FR7: Admin Remove Book
+Admin should be able to remove books from the system.
+
+3. Non-Functional Requirements
+
+NFR1: Performance
+System should respond within 2 seconds.
+
+NFR2: Security
+Passwords must be stored securely and encrypted.
+
+NFR3: Availability
+System should be available 99% of the time.
+
+4. Use Cases
+
+Use Case 1: Login
+Actor: User
+Description: User enters username and password to log in.
+
+Use Case 2: Borrow Book
+Actor: User
+Description: User selects a book and clicks borrow.
+
+Use Case 3: Add Book
+Actor: Admin
+Description: Admin adds book details to system.
+
+5. Expected Behavior
+
+- Users cannot borrow unavailable books.
+- Users must login before borrowing.
+- Admin actions require admin role.
